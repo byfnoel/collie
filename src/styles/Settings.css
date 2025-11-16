@@ -5,16 +5,29 @@ div.settings-page ul.setting-list {
 }
 
 div.settings-page ul.setting-list > li {
-  margin-bottom: .5rem;
+  margin-bottom: 0.5rem;
 }
 
 div.settings-page ul.setting-list > li > small {
   display: block;
-  font-size: .8rem;
-  margin-top: -3px;
+  font-size: 0.8rem;
+  margin-top: -2px;
 }
 
 div.settings-page label,
 div.settings-page button {
   margin-left: 5px;
+}
+
+div.settings-page .disabled {
+  color: var(--color-sep);
+}
+
+div.settings-page ul.sublist {
+  padding-top: 0.5rem;
+  border-left: 2px solid var(--color-sep);
+}
+
+div.settings-page ul.sublist > li {
+  padding-left: 0.5rem;
 }

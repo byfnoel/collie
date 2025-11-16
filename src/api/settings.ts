@@ -6,13 +6,16 @@ export enum SettingKey {
   DB_SCHEME_VERSION = "DbSchemeVersion",
   THEME = "Theme",
   ITEMS_ORDER = "ItemsOrder",
-  PROXY="Proxy",
-  FETCH_OLD_ITEMS = "FetchOldItems"
+  PROXY = "Proxy",
+  FETCH_OLD_ITEMS = "FetchOldItems",
+  UPSTREAM_URL = "UpstreamUrl",
+  UPSTREAM_ACCESS = "UpstreamAccess",
+  UPSTREAM_SECRET = "UpstreamSecret",
 }
 
 export interface Setting {
-  key: SettingKey,
-  value: string,
+  key: SettingKey;
+  value: string;
 }
 
 export type SettingToUpdate = Setting;
@@ -20,7 +23,7 @@ export type SettingToUpdate = Setting;
 export async function readAllSettings(): Promise<Setting[]> {
   try {
     return invoke("read_all_settings");
-  } catch (e) {
+  } catch {
     // Do nothing
   }
 
@@ -30,7 +33,7 @@ export async function readAllSettings(): Promise<Setting[]> {
 export async function readSetting(key: SettingKey): Promise<Setting | null> {
   try {
     return invoke("read_setting", { key });
-  } catch (e) {
+  } catch {
     // Do nothing
   }
 
@@ -40,7 +43,7 @@ export async function readSetting(key: SettingKey): Promise<Setting | null> {
 export async function updateSetting(arg: SettingToUpdate) {
   try {
     await invoke("update_setting", { arg: { key: arg.key, value: arg.value } });
-  } catch (e) {
+  } catch {
     // Do nothing
   }
 }

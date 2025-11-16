@@ -1,14 +1,14 @@
+use collie::repository::database::DbConnection;
 use core::fmt;
+use rusqlite::Row;
+use sea_query::{Expr, OnConflict, Query, SqliteQueryBuilder};
+use sea_query_rusqlite::RusqliteBinder;
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use std::{
     fmt::{Display, Formatter},
     str::FromStr,
 };
-
-use rusqlite::{Connection, Row};
-use sea_query::{Expr, Query, SqliteQueryBuilder};
-use sea_query_rusqlite::RusqliteBinder;
-use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 
@@ -23,6 +23,10 @@ pub enum SettingKey {
     ItemsOrder,
     Proxy,
     FetchOldItems,
+    UpstreamUrl,
+    UpstreamAccess,
+    UpstreamSecret,
+    UpstreamLastSyncTime,
 }
 
 impl Display for SettingKey {
@@ -35,6 +39,10 @@ impl Display for SettingKey {
             Self::ItemsOrder => write!(f, "items_order"),
             Self::Proxy => write!(f, "proxy"),
             Self::FetchOldItems => write!(f, "fetch_old_items"),
+            Self::UpstreamUrl => write!(f, "upstream_url"),
+            Self::UpstreamAccess => write!(f, "upstream_access"),
+            Self::UpstreamSecret => write!(f, "upstream_secret"),
+            Self::UpstreamLastSyncTime => write!(f, "upstream_last_sync_time"),
         }
     }
 }
@@ -51,6 +59,10 @@ impl FromStr for SettingKey {
             "items_order" => Ok(Self::ItemsOrder),
             "proxy" => Ok(Self::Proxy),
             "fetch_old_items" => Ok(Self::FetchOldItems),
+            "upstream_url" => Ok(Self::UpstreamUrl),
+            "upstream_access" => Ok(Self::UpstreamAccess),
+            "upstream_secret" => Ok(Self::UpstreamSecret),
+            "upstream_last_sync_time" => Ok(Self::UpstreamLastSyncTime),
             _ => Err(Error::InvalidEnumKey(
                 x.to_string(),
                 "SettingKey".to_string(),
@@ -80,12 +92,13 @@ pub struct SettingToUpdate {
     pub value: String,
 }
 
-pub fn read_all(db: &Connection) -> Result<Vec<Setting>> {
+pub fn read_all(conn: &DbConnection) -> Result<Vec<Setting>> {
     let (sql, values) = Query::select()
         .columns([Settings::Key, Settings::Value])
         .from(Settings::Table)
         .build_rusqlite(SqliteQueryBuilder);
 
+    let db = conn.lock().unwrap();
     let mut stmt = db.prepare(sql.as_str())?;
     let rows = stmt.query_map(&*values.as_params(), |x| Ok(Setting::from(x)))?;
 
@@ -94,7 +107,7 @@ pub fn read_all(db: &Connection) -> Result<Vec<Setting>> {
         .collect::<Vec<Setting>>())
 }
 
-pub fn read(db: &Connection, key: &SettingKey) -> Result<Setting> {
+pub fn read(conn: &DbConnection, key: &SettingKey) -> Result<Setting> {
     let (sql, values) = Query::select()
         .columns([Settings::Key, Settings::Value])
         .from(Settings::Table)
@@ -102,6 +115,7 @@ pub fn read(db: &Connection, key: &SettingKey) -> Result<Setting> {
         .limit(1)
         .build_rusqlite(SqliteQueryBuilder);
 
+    let db = conn.lock().unwrap();
     let mut stmt = db.prepare(sql.as_str())?;
     let mut rows = stmt.query(&*values.as_params())?;
     match rows.next()? {
@@ -110,7 +124,7 @@ pub fn read(db: &Connection, key: &SettingKey) -> Result<Setting> {
     }
 }
 
-pub fn update(db: &Connection, arg: &SettingToUpdate) -> Result<usize> {
+pub fn update(conn: &DbConnection, arg: &SettingToUpdate) -> Result<usize> {
     match arg.key {
         SettingKey::PollingFrequency => {
             if arg.value.parse::<i32>().map(|x| x < 30).unwrap_or(false) {
@@ -137,11 +151,36 @@ pub fn update(db: &Connection, arg: &SettingToUpdate) -> Result<usize> {
         _ => {}
     }
 
-    let (sql, values) = Query::update()
-        .table(Settings::Table)
-        .values([(Settings::Value, arg.value.clone().into())])
-        .and_where(Expr::col(Settings::Key).eq(arg.key.to_string()))
+    let (sql, values) = Query::insert()
+        .into_table(Settings::Table)
+        .columns([Settings::Key, Settings::Value])
+        .values_panic([arg.key.to_string().into(), arg.value.clone().into()])
+        .on_conflict(
+            OnConflict::column(Settings::Key)
+                .update_column(Settings::Value)
+                .to_owned(),
+        )
         .build_rusqlite(SqliteQueryBuilder);
 
+    let db = conn.lock().unwrap();
     Ok(db.execute(sql.as_str(), &*values.as_params())?)
+}
+
+pub fn upstream_url(conn: &DbConnection) -> Option<String> {
+    match read(conn, &SettingKey::UpstreamUrl) {
+        Ok(x) if !x.value.is_empty() => Some(x.value),
+        _ => None,
+    }
+}
+
+pub fn upstream_credentials(conn: &DbConnection) -> Option<(String, String)> {
+    let access = match read(conn, &SettingKey::UpstreamAccess) {
+        Ok(x) if !x.value.is_empty() => x.value,
+        _ => return None,
+    };
+    let secret = match read(conn, &SettingKey::UpstreamSecret) {
+        Ok(x) if !x.value.is_empty() => x.value,
+        _ => return None,
+    };
+    Some((access, secret))
 }
